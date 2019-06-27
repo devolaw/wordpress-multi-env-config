@@ -7,17 +7,24 @@
  * @author     Studio 24 <hello@studio24.net>
  */
 
+
 function s24_load_environment_config() {
 
+    require  __DIR__ . '/wp-config.env.php';
+    if (!isset($env) || !is_array($env)) {
+        throw new Exception('$env array not detected, you must set this in wp-config.env.php');
+    }
+
     /**
-     * Setup environment
+     * 1. Is environment already set?
      */
-    // Set env if set via environment variable
+
+    // Check environment variable
     if (getenv('WP_ENV') !== false) {
         define('WP_ENV', preg_replace('/[^a-z]/', '', getenv('WP_ENV')));
     }
 
-    // Set env via --env=<environment> argument if running via WP-CLI
+    // Check CLI argument
     if (!defined('WP_ENV') && PHP_SAPI == "cli" && defined('WP_CLI_ROOT')) {
 
         // We need to set $argv as global to be able to access it
@@ -31,43 +38,38 @@ function s24_load_environment_config() {
                 }
             }
         }
-
-        // Also support via .env file in config directory
-        if (!defined('WP_ENV')) {
-            if (file_exists(__DIR__ . '/.env')) {
-                $environment = trim(file_get_contents(__DIR__ . '/.env'));
-                define('WP_ENV', preg_replace('/[^a-z]/', '', $environment));
-            }
-        }
     }
 
-    // Define ENV from hostname
+    // Check .env file
+    if (!defined('WP_ENV') && file_exists(__DIR__ . '/.env')) {
+        $environment = trim(file_get_contents(__DIR__ . '/.env'));
+        define('WP_ENV', preg_replace('/[^a-z]/', '', $environment));
+    }
+
+    // Set environment constants
+    if (defined('WP_ENV')) {
+        if (!isset($env[WP_ENV])) {
+            throw new Exception(sprintf('Environment \'%s\' not set in the $env array in wp-config.env.php', WP_ENV));
+        }
+        define('WP_ENV_DOMAIN', $env[WP_ENV]['domain']);
+        define('WP_ENV_PATH', trim($env[WP_ENV]['path'], '/'));
+        define('WP_ENV_SSL', (bool)$env[WP_ENV]['ssl']);
+    }
+
+    /**
+     * 2. If environment not set, detect from hostname
+     */
+
+    // Set environment constants
     if (!defined('WP_ENV')) {
+
+        // Detect environment from hostname
         if (isset($_SERVER['HTTP_X_FORWARDED_HOST']) && !empty($_SERVER['HTTP_X_FORWARDED_HOST'])) {
             $hostname = strtolower(filter_var($_SERVER['HTTP_X_FORWARDED_HOST'], FILTER_SANITIZE_STRING));
         } else {
             $hostname = strtolower(filter_var($_SERVER['HTTP_HOST'], FILTER_SANITIZE_STRING));
         }
-    }
 
-    // Load environments
-    require  __DIR__ . '/wp-config.env.php';
-
-    if (!isset($env) || !is_array($env)) {
-        throw new Exception('$env array not detected, you must set this in wp-config.env.php');
-    }
-
-    // Set environment constants
-    if (defined('WP_ENV')) {
-        if (isset($env[WP_ENV])) {
-            define('WP_ENV_DOMAIN', $env[WP_ENV]['domain']);
-            define('WP_ENV_PATH', trim($env[WP_ENV]['path'], '/'));
-            define('WP_ENV_SSL', (bool) $env[WP_ENV]['ssl']);
-        }
-
-    } else {
-
-        // Detect environment from hostname
         foreach ($env as $environment => $env_vars) {
             if (!isset($env_vars['domain'])) {
                 throw new Exception('You must set the domain value in your environment array, see wp-config.env.php');
@@ -140,7 +142,7 @@ function s24_load_environment_config() {
 
     // Define W3 Total Cache hostname
     if (defined('WP_CACHE')) {
-        define('COOKIE_DOMAIN', $hostname);
+        define('COOKIE_DOMAIN', WP_ENV_DOMAIN);
     }
 
 }
